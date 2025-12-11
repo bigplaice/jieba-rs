@@ -71,6 +71,12 @@
 //! ```
 //!
 
+// nsj
+use std::fs::File;
+use std::io::{BufReader};
+use std::path::{Path};
+// end of nsj
+
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
@@ -262,6 +268,8 @@ impl Jieba {
     pub fn new() -> Self {
         let mut instance = Self::empty();
         instance.load_default_dict();
+        // nsj
+        instance.load_user_dict();
         instance
     }
 
@@ -298,6 +306,49 @@ impl Jieba {
 
         let mut default_dict = BufReader::new(DEFAULT_DICT.as_bytes());
         self.load_dict(&mut default_dict).unwrap();
+    }
+
+    /// nsj 加载用户自定义词典
+    /// 1. 先定位当前动态库所在目录（在二进制可执行文件情况下是可执行文件所在目录）
+    /// 2. 构造路径： <exe_dir>/../share/postgresql/user_dict.txt
+    /// 3. 如果该文件存在，则以字节流方式读取并交给 load_dict 加载
+    /// 4. 文件不存在时仅保留默认词典（不报错）
+    pub fn load_user_dict(&mut self) {
+        // 获取当前可执行文件所在目录
+        let exe_path = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(_) => {
+                // 如果拿不到（例如在测试环境），直接静默返回
+                return;
+            }
+        };
+
+        let exe_dir = exe_path.parent().unwrap_or(Path::new(""));
+        let user_dict_path = exe_dir
+            .parent()                     // ../
+            .unwrap_or(Path::new(""))
+            .join("share")
+            .join("postgresql")
+            .join("user_dict.txt");
+
+        // 如果文件不存在，直接返回（保持默认词典）
+        if !user_dict_path.exists() {
+            return;
+        }
+
+        // 打开文件并读取全部字节
+        let file = match File::open(&user_dict_path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Warning: Failed to open user_dict.txt at {:?}: {}", user_dict_path, e);
+                return;
+            }
+        };
+
+        let mut reader = BufReader::new(file);
+        if let Err(e) = self.load_dict(&mut reader) {
+            eprintln!("Warning: Failed to parse user dictionary: {}", e);
+        } 
     }
 
     /// Clears all data
